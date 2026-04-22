@@ -5,9 +5,11 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @State private var pdfDocument: PDFDocument?
     @State private var selectedPages: Set<Int> = []
-    // Undo / Redo stacks for selection state
-    @State private var undoStack: [Set<Int>] = []
-    @State private var redoStack: [Set<Int>] = []
+    // Undo / Redo stacks for selection state and order snapshots
+    @State private var undoStack: [(Set<Int>, [Int])] = []
+    @State private var redoStack: [(Set<Int>, [Int])] = []
+    // Ordered list for exports (only pages that are selected)
+    @State private var orderedSelectedPages: [Int] = []
     @State private var showingImporter = false
     @State private var importErrorMessage: String?
     @State private var showingErrorAlert = false
@@ -27,17 +29,26 @@ struct ContentView: View {
                     VStack(spacing: 0) {
                         PDFKitView(document: doc, onUndo: { undo() }, onRedo: { redo() })
                             .edgesIgnoringSafeArea(.all)
-                        ThumbnailsView(document: doc, selectedPages: $selectedPages, selectionToggled: { idx in
-                            // record current state then toggle
-                            undoStack.append(selectedPages)
+                        ThumbnailsView(document: doc, selectedPages: $selectedPages, orderedSelectedPages: orderedSelectedPages, selectionToggled: { idx in
+                            // record current state then toggle (snapshot selection + order)
+                            undoStack.append((selectedPages, orderedSelectedPages))
                             redoStack.removeAll()
                             if selectedPages.contains(idx) {
                                 selectedPages.remove(idx)
+                                // remove from ordered list if present
+                                orderedSelectedPages.removeAll { $0 == idx }
                             } else {
                                 selectedPages.insert(idx)
+                                // append to ordered list
+                                orderedSelectedPages.append(idx)
                             }
                         })
-                            .frame(height: 200)
+                            .frame(height: 120)
+
+                        // show reordering UI only when there are selected pages
+                        if !orderedSelectedPages.isEmpty {
+                            SelectedOrderView(document: doc, orderedSelectedPages: $orderedSelectedPages)
+                        }
                     }
                 } else {
                     VStack(spacing: 12) {
@@ -123,6 +134,9 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 self.pdfDocument = doc
                 self.selectedPages = []
+                self.orderedSelectedPages = []
+                self.undoStack.removeAll()
+                self.redoStack.removeAll()
             }
         } else {
             importErrorMessage = "Failed to open PDF."
@@ -134,23 +148,26 @@ struct ContentView: View {
 
     private func undo() {
         guard let previous = undoStack.popLast() else { return }
-        // push current state to redo
-        redoStack.append(selectedPages)
-        selectedPages = previous
+        // push current state to redo (snapshot both)
+        redoStack.append((selectedPages, orderedSelectedPages))
+        selectedPages = previous.0
+        orderedSelectedPages = previous.1
     }
 
     private func redo() {
         guard let next = redoStack.popLast() else { return }
-        // push current state to undo
-        undoStack.append(selectedPages)
-        selectedPages = next
+        // push current state to undo (snapshot both)
+        undoStack.append((selectedPages, orderedSelectedPages))
+        selectedPages = next.0
+        orderedSelectedPages = next.1
     }
 
     // MARK: - Export
 
     private func exportCombined() {
         guard let doc = pdfDocument else { return }
-        let indexes = selectedPages.sorted()
+        // use explicit ordered list if available, otherwise default to sorted set
+        let indexes = orderedSelectedPages.isEmpty ? selectedPages.sorted() : orderedSelectedPages
         guard !indexes.isEmpty else {
             importErrorMessage = "No pages selected to export."
             showingErrorAlert = true
@@ -177,7 +194,7 @@ struct ContentView: View {
 
     private func exportSeparate() {
         guard let doc = pdfDocument else { return }
-        let indexes = selectedPages.sorted()
+        let indexes = orderedSelectedPages.isEmpty ? selectedPages.sorted() : orderedSelectedPages
         guard !indexes.isEmpty else {
             importErrorMessage = "No pages selected to export."
             showingErrorAlert = true
@@ -241,4 +258,4 @@ struct ExportPDFFile: FileDocument {
         return FileWrapper(regularFileWithContents: data)
     }
 }
-}
+ 

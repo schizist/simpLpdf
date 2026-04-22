@@ -5,6 +5,8 @@ import UIKit
 struct ThumbnailsView: View {
     let document: PDFDocument
     @Binding var selectedPages: Set<Int>
+    // optional ordered selection to show index badges
+    var orderedSelectedPages: [Int]? = nil
     var selectionToggled: ((Int) -> Void)? = nil
 
     private let thumbSize = CGSize(width: 120, height: 160)
@@ -12,9 +14,11 @@ struct ThumbnailsView: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: true) {
             HStack(spacing: 12) {
-                ForEach(0..<(document.pageCount), id: \.\u200Bself) { index in
+                ForEach(0..<(document.pageCount), id: \.self) { index in
                     let image = thumbnailImage(for: index)
-                    ThumbnailItem(image: image, index: index, isSelected: selectedPages.contains(index)) {
+                    // compute order badge if present
+                    let order = orderedSelectedPages?.firstIndex(of: index).map { $0 + 1 }
+                    ThumbnailItem(image: image, index: index, isSelected: selectedPages.contains(index), order: order) {
                         if let cb = selectionToggled {
                             cb(index)
                         } else {
@@ -49,6 +53,7 @@ private struct ThumbnailItem: View {
     let image: UIImage
     let index: Int
     let isSelected: Bool
+    let order: Int?
     let action: () -> Void
 
     var body: some View {
@@ -64,7 +69,14 @@ private struct ThumbnailItem: View {
                             .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 4)
                     )
 
-                if isSelected {
+                if let n = order, isSelected {
+                    Text("\(n)")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(Color.accentColor))
+                        .offset(x: -6, y: 6)
+                } else if isSelected {
                     Circle()
                         .fill(Color.accentColor)
                         .frame(width: 28, height: 28)
