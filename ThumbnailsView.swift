@@ -12,6 +12,7 @@ struct ThumbnailsView: View {
 
     @State private var draggingPage: Int? = nil
     @State private var targetIndex: Int? = nil
+    @State private var thumbFrames: [Int: CGRect] = [:]
 
     private let thumbSize = CGSize(width: 120, height: 160)
 
@@ -39,40 +40,16 @@ struct ThumbnailsView: View {
                         }
                         return NSItemProvider()
                     }
-                    // Accept drops only on selected pages to reorder
-                    .onDrop(of: [UTType.plainText], isTargeted: Binding(get: { targetIndex == index }, set: { isTargeted in
-                        if isTargeted {
-                            targetIndex = index
-                        } else if targetIndex == index {
-                            targetIndex = nil
-                        }
-                    })) { providers in
-                        guard selectedPages.contains(index) else { return false }
-                        if let provider = providers.first {
-                            _ = provider.loadObject(ofClass: NSString.self) { (ns, err) in
-                                guard let s = ns as String?, let dragged = Int(s) else { return }
-                                DispatchQueue.main.async {
-                                    // move dragged in orderedSelectedPages to position of `index`
-                                    if let from = orderedSelectedPages.firstIndex(of: dragged) {
-                                        if let to = orderedSelectedPages.firstIndex(of: index) {
-                                            var arr = orderedSelectedPages
-                                            let item = arr.remove(at: from)
-                                            // compute adjusted destination after removal
-                                            let dest = from < to ? to : to
-                                            arr.insert(item, at: dest)
-                                            orderedSelectedPages = arr
-                                        }
-                                    }
-                                    draggingPage = nil
-                                    targetIndex = nil
-                                }
-                            }
-                            return true
-                        }
-                        return false
-                    }
+                    // Accept drops and compute insertion BEFORE/AFTER based on drop x
+                    .background(GeometryReader { geo in
+                        Color.clear.preference(key: ThumbFramePreferenceKey.self, value: [index: geo.frame(in: .global)])
+                    })
+                    .onDrop(of: [UTType.plainText], delegate: ThumbnailDropDelegate(targetIndex: index, orderedSelectedPages: $orderedSelectedPages, draggingPage: $draggingPage, frameFor: { thumbFrames[$0] }))
             }
             .padding(12)
+            .onPreferenceChange(ThumbFramePreferenceKey.self) { val in
+                thumbFrames = val
+            }
         }
         .background(Color(UIColor.secondarySystemBackground))
     }
@@ -91,6 +68,69 @@ struct ThumbnailsView: View {
         }
         let thumb = page.thumbnail(of: thumbSize, for: .cropBox)
         return thumb
+    }
+}
+
+// PreferenceKey for thumbnail frames
+private struct ThumbFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [Int: CGRect] = [:]
+    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
+    }
+}
+
+// DropDelegate that inserts dragged item before/after target based on drop x position
+private struct ThumbnailDropDelegate: DropDelegate {
+    let targetIndex: Int
+    @Binding var orderedSelectedPages: [Int]
+    @Binding var draggingPage: Int?
+    var frameFor: (Int) -> CGRect?
+
+    func validateDrop(info: DropInfo) -> Bool {
+        return draggingPage != nil
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        return DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let dragged = draggingPage else { return false }
+        DispatchQueue.main.async {
+            guard let from = orderedSelectedPages.firstIndex(of: dragged) else {
+                insertDragged(dragged: dragged, info: info)
+                draggingPage = nil
+                return
+            }
+            insertDragged(dragged: dragged, info: info, fromIndex: from)
+            draggingPage = nil
+        }
+        return true
+    }
+
+    private func insertDragged(dragged: Int, info: DropInfo, fromIndex: Int? = nil) {
+        var arr = orderedSelectedPages
+        if let from = fromIndex {
+            arr.remove(at: from)
+        }
+
+        // compute destination relative to target frame
+        let targetFrame = frameFor(targetIndex) ?? .zero
+        let dropX = info.location.x
+        let midX = targetFrame.midX
+
+        // find current index of target (after removal)
+        let toIdx = arr.firstIndex(of: targetIndex) ?? arr.count
+        let dest: Int
+        if dropX < midX {
+            dest = toIdx
+        } else {
+            dest = toIdx + 1
+        }
+
+        let insertIndex = min(max(0, dest), arr.count)
+        arr.insert(dragged, at: insertIndex)
+        orderedSelectedPages = arr
     }
 }
 
@@ -114,21 +154,25 @@ private struct ThumbnailItem: View {
                             .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 4)
                     )
 
-                if let n = order, isSelected {
-                    Text("\(n)")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 28, height: 28)
-                        .background(Circle().fill(Color.accentColor))
-                        .offset(x: -6, y: 6)
-                } else if isSelected {
-                    Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: 28, height: 28)
-                        .overlay(Image(systemName: "checkmark")
-                                    .foregroundColor(.white)
-                                    .font(.system(size: 14, weight: .bold)))
-                        .offset(x: -6, y: 6)
+                    if let n = order, isSelected {
+                        Text("\(n)")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 22, height: 22)
+                            .background(Circle().fill(Color.accentColor))
+                            .offset(x: -6, y: 6)
+                            .zIndex(1)
+                            .animation(.default, value: order)
+                    } else if isSelected {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 22, height: 22)
+                            .overlay(Image(systemName: "checkmark")
+                                        .foregroundColor(.white)
+                                        .font(.system(size: 12, weight: .semibold)))
+                            .offset(x: -6, y: 6)
+                            .zIndex(1)
+                            .animation(.default, value: order)
                 }
             }
         }
