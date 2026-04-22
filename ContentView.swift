@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var orderedSelectedPages: [Int] = []
     @State private var showingImporter = false
     @State private var isDrawingEnabled: Bool = false
+    @State private var clearSignal: Int = 0
     @State private var importErrorMessage: String?
     @State private var showingErrorAlert = false
     // Export state
@@ -80,6 +81,12 @@ struct ContentView: View {
                         Image(systemName: isDrawingEnabled ? "pencil.circle.fill" : "pencil.circle")
                     }
                     .help("Toggle Draw")
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { clearSignal += 1 }) {
+                        Text("Clear")
+                    }
+                    .help("Clear drawing on current page")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showingImporter = true }) {

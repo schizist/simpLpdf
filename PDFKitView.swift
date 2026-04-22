@@ -6,6 +6,7 @@ import PencilKit
 struct PDFKitView: UIViewRepresentable {
     let document: PDFDocument
     var isDrawingEnabled: Bool = false
+    var clearSignal: Int = 0
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
 
@@ -38,6 +39,7 @@ struct PDFKitView: UIViewRepresentable {
         // wire to coordinator
         context.coordinator.canvas = canvas
         context.coordinator.pdfView = pdfView
+        context.coordinator.lastClearSignal = clearSignal
         // observe layout changes to reposition canvas per-page
         pdfView.addObserver(context.coordinator, forKeyPath: "bounds", options: .new, context: nil)
         pdfView.addObserver(context.coordinator, forKeyPath: "frame", options: .new, context: nil)
@@ -76,9 +78,15 @@ struct PDFKitView: UIViewRepresentable {
             canvas.isUserInteractionEnabled = isDrawingEnabled
             canvas.isHidden = !isDrawingEnabled
         }
+        // handle clear signal
+        if context.coordinator.lastClearSignal != clearSignal {
+            context.coordinator.lastClearSignal = clearSignal
+            context.coordinator.clearCurrentPageDrawing()
+        }
     }
 
     class Coordinator: NSObject, UIGestureRecognizerDelegate, PKCanvasViewDelegate {
+            var lastClearSignal: Int = 0
         var onUndo: (() -> Void)?
         var onRedo: (() -> Void)?
         weak var pdfView: PDFView?
@@ -137,6 +145,16 @@ struct PDFKitView: UIViewRepresentable {
             drawings[pageIndex] = canvasView.drawing
             // also update shared annotation store for export access
             AnnotationStore.shared.set(canvasView.drawing, for: pageIndex)
+        }
+
+        func clearCurrentPageDrawing() {
+            guard let pdfView = pdfView, let page = pdfView.currentPage, let doc = pdfView.document else { return }
+            let pageIndex = doc.index(for: page)
+            drawings[pageIndex] = PKDrawing()
+            AnnotationStore.shared.remove(for: pageIndex)
+            DispatchQueue.main.async {
+                self.canvas?.drawing = PKDrawing()
+            }
         }
 
         deinit {
