@@ -5,6 +5,7 @@ import UIKit
 struct ThumbnailsView: View {
     let document: PDFDocument
     @Binding var selectedPages: Set<Int>
+    var selectionToggled: ((Int) -> Void)? = nil
 
     private let thumbSize = CGSize(width: 120, height: 160)
 
@@ -14,7 +15,11 @@ struct ThumbnailsView: View {
                 ForEach(0..<(document.pageCount), id: \.\u200Bself) { index in
                     let image = thumbnailImage(for: index)
                     ThumbnailItem(image: image, index: index, isSelected: selectedPages.contains(index)) {
-                        toggle(index: index)
+                        if let cb = selectionToggled {
+                            cb(index)
+                        } else {
+                            toggle(index: index)
+                        }
                     }
                 }
             }

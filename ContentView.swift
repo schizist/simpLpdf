@@ -5,6 +5,9 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @State private var pdfDocument: PDFDocument?
     @State private var selectedPages: Set<Int> = []
+    // Undo / Redo stacks for selection state
+    @State private var undoStack: [Set<Int>] = []
+    @State private var redoStack: [Set<Int>] = []
     @State private var showingImporter = false
     @State private var importErrorMessage: String?
     @State private var showingErrorAlert = false
@@ -20,9 +23,18 @@ struct ContentView: View {
             Group {
                 if let doc = pdfDocument {
                     VStack(spacing: 0) {
-                        PDFKitView(document: doc)
+                        PDFKitView(document: doc, onUndo: { undo() }, onRedo: { redo() })
                             .edgesIgnoringSafeArea(.all)
-                        ThumbnailsView(document: doc, selectedPages: $selectedPages)
+                        ThumbnailsView(document: doc, selectedPages: $selectedPages, selectionToggled: { idx in
+                            // record current state then toggle
+                            undoStack.append(selectedPages)
+                            redoStack.removeAll()
+                            if selectedPages.contains(idx) {
+                                selectedPages.remove(idx)
+                            } else {
+                                selectedPages.insert(idx)
+                            }
+                        })
                             .frame(height: 200)
                     }
                 } else {
@@ -110,6 +122,22 @@ struct ContentView: View {
             importErrorMessage = "Failed to open PDF."
             showingErrorAlert = true
         }
+    }
+
+    // MARK: - Undo / Redo
+
+    private func undo() {
+        guard let previous = undoStack.popLast() else { return }
+        // push current state to redo
+        redoStack.append(selectedPages)
+        selectedPages = previous
+    }
+
+    private func redo() {
+        guard let next = redoStack.popLast() else { return }
+        // push current state to undo
+        undoStack.append(selectedPages)
+        selectedPages = next
     }
 
     // MARK: - Export
