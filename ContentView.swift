@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @State private var pdfDocument: PDFDocument?
+    @State private var selectedPages: Set<Int> = []
     @State private var showingImporter = false
     @State private var importErrorMessage: String?
     @State private var showingErrorAlert = false
@@ -12,8 +13,12 @@ struct ContentView: View {
         NavigationView {
             Group {
                 if let doc = pdfDocument {
-                    PDFKitView(document: doc)
-                        .edgesIgnoringSafeArea(.all)
+                    VStack(spacing: 0) {
+                        PDFKitView(document: doc)
+                            .edgesIgnoringSafeArea(.all)
+                        ThumbnailsView(document: doc, selectedPages: $selectedPages)
+                            .frame(height: 200)
+                    }
                 } else {
                     VStack(spacing: 12) {
                         Image(systemName: "doc.richtext")
@@ -55,6 +60,7 @@ struct ContentView: View {
         if let doc = PDFDocument(url: url) {
             DispatchQueue.main.async {
                 self.pdfDocument = doc
+                self.selectedPages = []
             }
         } else {
             importErrorMessage = "Failed to open PDF."
