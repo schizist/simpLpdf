@@ -14,6 +14,12 @@ Purpose: quick guide for continuing development on simpLpdf.
 - Two-finger tap = undo (selection state)
 - Three-finger tap = redo (selection state)
 
+Implemented drawing & reorder features:
+- Drag-to-reorder selected thumbnails (controls export order)
+- PencilKit overlay per page (draw mode toggle)
+- Clear drawing on current page
+- Export burns drawings into exported pages (rasterized)
+
 3) Architecture / important files
 - `SimpLpdfApp.swift` — app entry point (SwiftUI `@main`).
 - `ContentView.swift` — main UI: loads PDF, holds `@State` selection, export logic, undo/redo stacks, presents thumbnails and activity sheet.
@@ -21,23 +27,37 @@ Purpose: quick guide for continuing development on simpLpdf.
 - `ThumbnailsView.swift` — SwiftUI thumbnail strip; renders page thumbnails and toggles selection via a binding or callback.
 - `ActivityView.swift` — `UIViewControllerRepresentable` wrapper for `UIActivityViewController` used to share multiple exported files.
 - `README.md` — project summary and limitations (kept up-to-date).
+ - `AnnotationStore.swift` — simple thread-safe in-memory storage for per-page `PKDrawing` used by export.
+ - `SelectedOrderView.swift` — small reorder list fallback UI for ordering selected pages.
+ - `ThumbnailsView.swift` — updated to support drag-to-reorder with mid-point drop insertion logic.
 
 4) Known limitations
-- No annotation editing or PencilKit integration yet.
-- Undo/redo only covers thumbnail selection state (snapshots), not editor annotations.
-- Export filenames and metadata are minimal (page_001.pdf, combined.pdf).
+
+4) Known limitations
+- Annotations are stored in-memory (`AnnotationStore`) and are not persisted to disk or embedded as native PDF annotations.
+- Exported annotations are rasterized (images) over pages; vector embedding into PDF is not implemented.
+- Undo/redo applies to selection+order snapshots only; annotation edit undo is not implemented.
 - iPad/macOS build and automated tests not included; open in Xcode and verify targets.
 
 5) Next recommended milestones (priority order)
-1. Add annotation/PencilKit support with an annotation undo/redo system.
-2. Improve export naming and metadata; optionally bundle exports (ZIP) or support cloud targets.
-3. Add thumbnail UX polish and selection accessibility improvements.
-4. Add unit/UI tests and verify iPad simulator/device builds.
+5) Next recommended milestones (priority order)
+1. Polish annotation UI (tool selection, color, thickness, eraser) and annotation undo/redo.
+2. Persist or embed annotations into PDF pages as native annotations (vector) when exporting/saving.
+3. Improve export naming/metadata and add bundling/upload options.
+4. Validate drag/drop reordering on physical iPad, adjust drop hit testing and visuals.
+5. Add unit/UI tests and device build verification.
 
 6) Rules for future contributors / agents
 - Keep scope narrow and changes minimal for each commit.
 - Avoid adding heavy architecture or view models unless feature complexity requires it.
 - Prefer native Apple frameworks (PDFKit, PencilKit, SwiftUI, UIKit) — no third-party dependencies.
 - Do not refactor unrelated code; changes must be localized and justified.
+
+Known Risks / Needs Real Device Testing:
+- PencilKit overlay alignment during zoom/scroll may differ on device; verify canvas tracks page bounds correctly.
+- Gesture conflicts between drawing and PDF navigation (pencil vs. touch vs. multi-finger gestures) should be tested on real iPad.
+- Export rendering quality / page scale: rasterization scale may need tuning for print-quality results.
+- Drag-and-drop reorder behavior and drop-position accuracy should be validated on actual iPad hardware.
+- General build verification in Xcode on macOS/iPadOS (signing, entitlements, runtime behavior).
 
 Contact: refer to the repo owner for design/behavior decisions.
