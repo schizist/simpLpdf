@@ -8,6 +8,12 @@ struct ContentView: View {
     @State private var showingImporter = false
     @State private var importErrorMessage: String?
     @State private var showingErrorAlert = false
+    // Export state
+    @State private var exportData: Data? = nil
+    @State private var exportFileName: String = "export.pdf"
+    @State private var showingExporter: Bool = false
+    @State private var separateExports: [(Data, String)] = []
+    @State private var currentSeparateIndex: Int = 0
 
     var body: some View {
         NavigationView {
@@ -32,6 +38,16 @@ struct ContentView: View {
             }
             .navigationTitle("simpLpdf")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    HStack(spacing: 12) {
+                        Button("Export Combined") {
+                            exportCombined()
+                        }
+                        Button("Export Separate") {
+                            exportSeparate()
+                        }
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showingImporter = true }) {
                         Image(systemName: "folder")
@@ -54,6 +70,34 @@ struct ContentView: View {
         } message: {
             Text(importErrorMessage ?? "Unknown error")
         }
+        // File exporter for combined or separate exports. Uses ExportPDFFile.
+        .fileExporter(isPresented: Binding(get: { exportData != nil && showingExporter }, set: { _ in }))
+        {
+            ExportPDFFile(data: exportData ?? Data())
+        } contentType: .pdf { result in
+            switch result {
+            case .success:
+                if currentSeparateIndex + 1 < separateExports.count {
+                    currentSeparateIndex += 1
+                    let next = separateExports[currentSeparateIndex]
+                    exportData = next.0
+                    exportFileName = next.1
+                    showingExporter = true
+                } else {
+                    separateExports = []
+                    currentSeparateIndex = 0
+                    showingExporter = false
+                    exportData = nil
+                }
+            case .failure(let error):
+                importErrorMessage = "Export failed: \(error.localizedDescription)"
+                showingErrorAlert = true
+                separateExports = []
+                currentSeparateIndex = 0
+                showingExporter = false
+                exportData = nil
+            }
+        }
     }
 
     private func loadPDF(from url: URL) {
@@ -67,4 +111,91 @@ struct ContentView: View {
             showingErrorAlert = true
         }
     }
+
+    // MARK: - Export
+
+    private func exportCombined() {
+        guard let doc = pdfDocument else { return }
+        let indexes = selectedPages.sorted()
+        guard !indexes.isEmpty else {
+            importErrorMessage = "No pages selected to export."
+            showingErrorAlert = true
+            return
+        }
+
+        let outDoc = PDFDocument()
+        for idx in indexes {
+            guard let page = doc.page(at: idx) else { continue }
+            if let copy = page.copy() as? PDFPage {
+                outDoc.insert(copy, at: outDoc.pageCount)
+            }
+        }
+
+        if let data = outDoc.dataRepresentation() {
+            exportData = data
+            exportFileName = "combined.pdf"
+            showingExporter = true
+        } else {
+            importErrorMessage = "Failed to create combined PDF."
+            showingErrorAlert = true
+        }
+    }
+
+    private func exportSeparate() {
+        guard let doc = pdfDocument else { return }
+        let indexes = selectedPages.sorted()
+        guard !indexes.isEmpty else {
+            importErrorMessage = "No pages selected to export."
+            showingErrorAlert = true
+            return
+        }
+
+        var exports: [(Data, String)] = []
+        for idx in indexes {
+            guard let page = doc.page(at: idx) else { continue }
+            let single = PDFDocument()
+            if let copy = page.copy() as? PDFPage {
+                single.insert(copy, at: 0)
+            }
+            if let data = single.dataRepresentation() {
+                let name = String(format: "page_%03d.pdf", idx + 1)
+                exports.append((data, name))
+            }
+        }
+
+        guard !exports.isEmpty else {
+            importErrorMessage = "Failed to build separate PDFs."
+            showingErrorAlert = true
+            return
+        }
+
+        separateExports = exports
+        currentSeparateIndex = 0
+        exportData = separateExports[0].0
+        exportFileName = separateExports[0].1
+        showingExporter = true
+    }
+}
+
+// Simple FileDocument wrapper for exporting PDF data
+struct ExportPDFFile: FileDocument {
+    static var readableContentTypes: [UTType] { [.pdf] }
+    var data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        if let fileData = configuration.file.regularFileContents {
+            data = fileData
+        } else {
+            data = Data()
+        }
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        return FileWrapper(regularFileWithContents: data)
+    }
+}
 }
