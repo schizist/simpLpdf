@@ -29,7 +29,7 @@ struct ContentView: View {
                     VStack(spacing: 0) {
                         PDFKitView(document: doc, onUndo: { undo() }, onRedo: { redo() })
                             .edgesIgnoringSafeArea(.all)
-                        ThumbnailsView(document: doc, selectedPages: $selectedPages, orderedSelectedPages: orderedSelectedPages, selectionToggled: { idx in
+                        ThumbnailsView(document: doc, selectedPages: $selectedPages, orderedSelectedPages: $orderedSelectedPages, selectionToggled: { idx in
                             // record current state then toggle (snapshot selection + order)
                             undoStack.append((selectedPages, orderedSelectedPages))
                             redoStack.removeAll()
