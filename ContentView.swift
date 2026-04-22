@@ -17,6 +17,8 @@ struct ContentView: View {
     @State private var showingExporter: Bool = false
     @State private var separateExports: [(Data, String)] = []
     @State private var currentSeparateIndex: Int = 0
+    // Activity (share) URLs for single share sheet
+    @State private var activityURLs: [URL]? = nil
 
     var body: some View {
         NavigationView {
@@ -89,25 +91,29 @@ struct ContentView: View {
         } contentType: .pdf { result in
             switch result {
             case .success:
-                if currentSeparateIndex + 1 < separateExports.count {
-                    currentSeparateIndex += 1
-                    let next = separateExports[currentSeparateIndex]
-                    exportData = next.0
-                    exportFileName = next.1
-                    showingExporter = true
-                } else {
-                    separateExports = []
-                    currentSeparateIndex = 0
-                    showingExporter = false
-                    exportData = nil
-                }
+                // combined export finished (or single file export)
+                showingExporter = false
+                exportData = nil
             case .failure(let error):
                 importErrorMessage = "Export failed: \(error.localizedDescription)"
                 showingErrorAlert = true
-                separateExports = []
-                currentSeparateIndex = 0
                 showingExporter = false
                 exportData = nil
+            }
+        }
+
+        // Present share sheet when activityURLs is set
+        .sheet(isPresented: Binding(get: { activityURLs != nil }, set: { if !$0 { activityURLs = nil } })) {
+            if let urls = activityURLs {
+                ActivityView(urls: urls) {
+                    // cleanup temp files after sharing
+                    for url in urls {
+                        try? FileManager.default.removeItem(at: url)
+                    }
+                    activityURLs = nil
+                }
+            } else {
+                EmptyView()
             }
         }
     }
@@ -178,30 +184,39 @@ struct ContentView: View {
             return
         }
 
-        var exports: [(Data, String)] = []
-        for idx in indexes {
-            guard let page = doc.page(at: idx) else { continue }
-            let single = PDFDocument()
-            if let copy = page.copy() as? PDFPage {
-                single.insert(copy, at: 0)
+        // Build PDF data per page and write to temp directory
+        var urls: [URL] = []
+        let fm = FileManager.default
+        let tempBase = fm.temporaryDirectory.appendingPathComponent("simpLpdf_exports_\(UUID().uuidString)")
+        do {
+            try fm.createDirectory(at: tempBase, withIntermediateDirectories: true, attributes: nil)
+            for idx in indexes {
+                guard let page = doc.page(at: idx) else { continue }
+                let single = PDFDocument()
+                if let copy = page.copy() as? PDFPage {
+                    single.insert(copy, at: 0)
+                }
+                if let data = single.dataRepresentation() {
+                    let name = String(format: "page_%03d.pdf", idx + 1)
+                    let fileURL = tempBase.appendingPathComponent(name)
+                    try data.write(to: fileURL, options: .atomic)
+                    urls.append(fileURL)
+                }
             }
-            if let data = single.dataRepresentation() {
-                let name = String(format: "page_%03d.pdf", idx + 1)
-                exports.append((data, name))
-            }
+        } catch {
+            importErrorMessage = "Failed to write temporary export files: \(error.localizedDescription)"
+            showingErrorAlert = true
+            return
         }
 
-        guard !exports.isEmpty else {
+        guard !urls.isEmpty else {
             importErrorMessage = "Failed to build separate PDFs."
             showingErrorAlert = true
             return
         }
 
-        separateExports = exports
-        currentSeparateIndex = 0
-        exportData = separateExports[0].0
-        exportFileName = separateExports[0].1
-        showingExporter = true
+        // Present a single share sheet with all file URLs
+        activityURLs = urls
     }
 }
 
