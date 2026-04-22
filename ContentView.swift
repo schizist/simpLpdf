@@ -12,6 +12,7 @@ struct ContentView: View {
     // Ordered list for exports (only pages that are selected)
     @State private var orderedSelectedPages: [Int] = []
     @State private var showingImporter = false
+    @State private var isDrawingEnabled: Bool = false
     @State private var importErrorMessage: String?
     @State private var showingErrorAlert = false
     // Export state
@@ -73,6 +74,12 @@ struct ContentView: View {
                             exportSeparate()
                         }
                     }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { isDrawingEnabled.toggle() }) {
+                        Image(systemName: isDrawingEnabled ? "pencil.circle.fill" : "pencil.circle")
+                    }
+                    .help("Toggle Draw")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showingImporter = true }) {

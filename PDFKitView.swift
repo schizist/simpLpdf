@@ -5,6 +5,7 @@ import PencilKit
 
 struct PDFKitView: UIViewRepresentable {
     let document: PDFDocument
+    var isDrawingEnabled: Bool = false
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
 
@@ -26,7 +27,8 @@ struct PDFKitView: UIViewRepresentable {
         canvas.isOpaque = false
         canvas.alwaysBounceVertical = false
         canvas.isMultipleTouchEnabled = true
-        canvas.isUserInteractionEnabled = true
+        canvas.isUserInteractionEnabled = isDrawingEnabled
+        canvas.isHidden = !isDrawingEnabled
         if #available(iOS 14.0, *) {
             canvas.drawingPolicy = .anyInput
         }
@@ -69,6 +71,11 @@ struct PDFKitView: UIViewRepresentable {
         context.coordinator.pdfView = uiView
         // ensure canvas is positioned for current page
         context.coordinator.updateCanvasForCurrentPage()
+        // enable/disable drawing interaction
+        if let canvas = context.coordinator.canvas {
+            canvas.isUserInteractionEnabled = isDrawingEnabled
+            canvas.isHidden = !isDrawingEnabled
+        }
     }
 
     class Coordinator: NSObject, UIGestureRecognizerDelegate, PKCanvasViewDelegate {
