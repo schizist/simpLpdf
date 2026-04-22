@@ -1,0 +1,32 @@
+# Codex Instructions
+
+You are working on a minimal iPad PDF utility.
+
+STRICT RULES:
+
+* Follow SPEC.md and TASKS.md
+* Only implement ONE milestone at a time
+* Do NOT add features not listed
+* Do NOT introduce third-party libraries
+* Keep code simple and readable
+* Do NOT refactor unrelated code
+
+OUTPUT RULES:
+After each task:
+
+1. List files created/modified
+2. Confirm build target (iPadOS)
+3. State what is NOT implemented yet
+
+TECH:
+
+* Swift
+* SwiftUI
+* PDFKit
+* PencilKit (only when requested)
+
+ARCHITECTURE:
+
+* Minimal SwiftUI app
+* Use UIViewRepresentable only when required (PDFKit)
+* Avoid unnecessary abstraction layers
