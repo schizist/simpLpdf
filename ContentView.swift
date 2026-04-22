@@ -1,6 +1,7 @@
 import SwiftUI
 import PDFKit
 import UniformTypeIdentifiers
+import UIKit
 
 struct ContentView: View {
     @State private var pdfDocument: PDFDocument?
@@ -176,8 +177,10 @@ struct ContentView: View {
 
         let outDoc = PDFDocument()
         for idx in indexes {
-            guard let page = doc.page(at: idx) else { continue }
-            if let copy = page.copy() as? PDFPage {
+            // render page with annotations if present
+            if let rendered = renderPageWithAnnotations(doc: doc, index: idx) {
+                outDoc.insert(rendered, at: outDoc.pageCount)
+            } else if let page = doc.page(at: idx), let copy = page.copy() as? PDFPage {
                 outDoc.insert(copy, at: outDoc.pageCount)
             }
         }
@@ -208,16 +211,27 @@ struct ContentView: View {
         do {
             try fm.createDirectory(at: tempBase, withIntermediateDirectories: true, attributes: nil)
             for idx in indexes {
-                guard let page = doc.page(at: idx) else { continue }
-                let single = PDFDocument()
-                if let copy = page.copy() as? PDFPage {
-                    single.insert(copy, at: 0)
-                }
-                if let data = single.dataRepresentation() {
-                    let name = String(format: "page_%03d.pdf", idx + 1)
-                    let fileURL = tempBase.appendingPathComponent(name)
-                    try data.write(to: fileURL, options: .atomic)
-                    urls.append(fileURL)
+                // render annotated page if necessary
+                if let rendered = renderPageWithAnnotations(doc: doc, index: idx) {
+                    let single = PDFDocument()
+                    single.insert(rendered, at: 0)
+                    if let data = single.dataRepresentation() {
+                        let name = String(format: "page_%03d.pdf", idx + 1)
+                        let fileURL = tempBase.appendingPathComponent(name)
+                        try data.write(to: fileURL, options: .atomic)
+                        urls.append(fileURL)
+                    }
+                } else if let page = doc.page(at: idx) {
+                    let single = PDFDocument()
+                    if let copy = page.copy() as? PDFPage {
+                        single.insert(copy, at: 0)
+                    }
+                    if let data = single.dataRepresentation() {
+                        let name = String(format: "page_%03d.pdf", idx + 1)
+                        let fileURL = tempBase.appendingPathComponent(name)
+                        try data.write(to: fileURL, options: .atomic)
+                        urls.append(fileURL)
+                    }
                 }
             }
         } catch {
@@ -234,6 +248,31 @@ struct ContentView: View {
 
         // Present a single share sheet with all file URLs
         activityURLs = urls
+    }
+
+    // Render PDF page combined with PKDrawing (if present) into a new PDFPage
+    private func renderPageWithAnnotations(doc: PDFDocument, index: Int) -> PDFPage? {
+        guard let page = doc.page(at: index) else { return nil }
+        let box = page.bounds(for: .mediaBox)
+        let size = box.size
+        // renderer using device scale for sharper results
+        let scale = UIScreen.main.scale
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let img = renderer.image { ctx in
+            // draw PDF page
+            page.draw(with: .mediaBox, to: ctx.cgContext)
+
+            // draw annotation if exists
+            if let drawing = AnnotationStore.shared.drawing(for: index) {
+                let drawImg = drawing.image(from: CGRect(origin: .zero, size: size), scale: scale)
+                drawImg.draw(in: CGRect(origin: .zero, size: size))
+            }
+        }
+
+        if let newPage = PDFPage(image: img) {
+            return newPage
+        }
+        return nil
     }
 }
 

@@ -128,6 +128,8 @@ struct PDFKitView: UIViewRepresentable {
             guard let pdfView = pdfView, let page = pdfView.currentPage, let doc = pdfView.document else { return }
             let pageIndex = doc.index(for: page)
             drawings[pageIndex] = canvasView.drawing
+            // also update shared annotation store for export access
+            AnnotationStore.shared.set(canvasView.drawing, for: pageIndex)
         }
 
         deinit {
