@@ -123,7 +123,7 @@ struct PDFKitView: UIViewRepresentable {
                 canvas.frame = frame
                 canvas.backgroundColor = .clear
                 canvas.isOpaque = false
-                canvas.isFingerDrawingEnabled = true
+                canvas.drawingPolicy = .anyInput
                 canvas.delegate = self
                 if let drawing = self.drawings[pageIndex] {
                     canvas.drawing = drawing

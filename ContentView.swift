@@ -2,27 +2,22 @@ import SwiftUI
 import PDFKit
 import UniformTypeIdentifiers
 import UIKit
+import PencilKit
 
 struct ContentView: View {
     @State private var pdfDocument: PDFDocument?
     @State private var selectedPages: Set<Int> = []
-    // Undo / Redo stacks for selection state and order snapshots
     @State private var undoStack: [(Set<Int>, [Int])] = []
     @State private var redoStack: [(Set<Int>, [Int])] = []
-    // Ordered list for exports (only pages that are selected)
     @State private var orderedSelectedPages: [Int] = []
     @State private var showingImporter = false
-    @State private var isDrawingEnabled: Bool = false
-    @State private var clearSignal: Int = 0
+    @State private var isDrawingEnabled = false
+    @State private var clearSignal = 0
     @State private var importErrorMessage: String?
     @State private var showingErrorAlert = false
-    // Export state
-    @State private var exportData: Data? = nil
-    @State private var exportFileName: String = "export.pdf"
-    @State private var showingExporter: Bool = false
-    @State private var separateExports: [(Data, String)] = []
-    @State private var currentSeparateIndex: Int = 0
-    // Activity (share) URLs for single share sheet
+    @State private var exportData: Data?
+    @State private var exportFileName = "export.pdf"
+    @State private var showingExporter = false
     @State private var activityURLs: [URL]? = nil
 
     var body: some View {
@@ -30,27 +25,41 @@ struct ContentView: View {
             Group {
                 if let doc = pdfDocument {
                     VStack(spacing: 0) {
-                        PDFKitView(document: doc, onUndo: { undo() }, onRedo: { redo() })
-                            .edgesIgnoringSafeArea(.all)
-                        ThumbnailsView(document: doc, selectedPages: $selectedPages, orderedSelectedPages: $orderedSelectedPages, selectionToggled: { idx in
-                            // record current state then toggle (snapshot selection + order)
-                            undoStack.append((selectedPages, orderedSelectedPages))
-                            redoStack.removeAll()
-                            if selectedPages.contains(idx) {
-                                selectedPages.remove(idx)
-                                // remove from ordered list if present
-                                orderedSelectedPages.removeAll { $0 == idx }
-                            } else {
-                                selectedPages.insert(idx)
-                                // append to ordered list
-                                orderedSelectedPages.append(idx)
-                            }
-                        })
-                            .frame(height: 120)
+                        PDFKitView(
+                            document: doc,
+                            isDrawingEnabled: isDrawingEnabled,
+                            clearSignal: clearSignal,
+                            onUndo: { undo() },
+                            onRedo: { redo() }
+                        )
+                        .edgesIgnoringSafeArea(.all)
 
-                        // show reordering UI only when there are selected pages
+                        ThumbnailsView(
+                            document: doc,
+                            selectedPages: $selectedPages,
+                            orderedSelectedPages: $orderedSelectedPages,
+                            selectionToggled: { idx in
+                                undoStack.append((selectedPages, orderedSelectedPages))
+                                redoStack.removeAll()
+
+                                if selectedPages.contains(idx) {
+                                    selectedPages.remove(idx)
+                                    orderedSelectedPages.removeAll { $0 == idx }
+                                } else {
+                                    selectedPages.insert(idx)
+                                    if !orderedSelectedPages.contains(idx) {
+                                        orderedSelectedPages.append(idx)
+                                    }
+                                }
+                            }
+                        )
+                        .frame(height: 120)
+
                         if !orderedSelectedPages.isEmpty {
-                            SelectedOrderView(document: doc, orderedSelectedPages: $orderedSelectedPages)
+                            SelectedOrderView(
+                                document: doc,
+                                orderedSelectedPages: $orderedSelectedPages
+                            )
                         }
                     }
                 } else {
@@ -58,6 +67,7 @@ struct ContentView: View {
                         Image(systemName: "doc.richtext")
                             .font(.system(size: 64))
                             .foregroundColor(.secondary)
+
                         Text("No PDF loaded")
                             .foregroundColor(.secondary)
                     }
@@ -66,29 +76,26 @@ struct ContentView: View {
             }
             .navigationTitle("simpLpdf")
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    HStack(spacing: 12) {
-                        Button("Export Combined") {
-                            exportCombined()
-                        }
-                        Button("Export Separate") {
-                            exportSeparate()
-                        }
+                ToolbarItemGroup(placement: .navigationBarLeading) {
+                    Button("Export Combined") {
+                        exportCombined()
+                    }
+
+                    Button("Export Separate") {
+                        exportSeparate()
                     }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Button(action: { isDrawingEnabled.toggle() }) {
                         Image(systemName: isDrawingEnabled ? "pencil.circle.fill" : "pencil.circle")
                     }
-                    .help("Toggle Draw")
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { clearSignal += 1 }) {
-                        Text("Clear")
+                    .accessibilityLabel("Toggle Draw")
+
+                    Button("Clear") {
+                        clearSignal += 1
                     }
-                    .help("Clear drawing on current page")
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
+
                     Button(action: { showingImporter = true }) {
                         Image(systemName: "folder")
                     }
@@ -96,7 +103,7 @@ struct ContentView: View {
                 }
             }
         }
-        .fileImporter(isPresented: $showingImporter, allowedContentTypes: [UTType.pdf]) { result in
+        .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.pdf]) { result in
             switch result {
             case .success(let url):
                 loadPDF(from: url)
@@ -110,16 +117,20 @@ struct ContentView: View {
         } message: {
             Text(importErrorMessage ?? "Unknown error")
         }
-        // File exporter for combined or separate exports. Uses ExportPDFFile.
-        .fileExporter(isPresented: Binding(get: { exportData != nil && showingExporter }, set: { _ in }))
-        {
-            ExportPDFFile(data: exportData ?? Data())
-        } contentType: .pdf { result in
+        .fileExporter(
+            isPresented: Binding(
+                get: { exportData != nil && showingExporter },
+                set: { _ in }
+            ),
+            document: ExportPDFFile(data: exportData ?? Data()),
+            contentType: .pdf,
+            defaultFilename: exportFileName.replacingOccurrences(of: ".pdf", with: "")
+        ) { result in
             switch result {
             case .success:
-                // combined export finished (or single file export)
                 showingExporter = false
                 exportData = nil
+
             case .failure(let error):
                 importErrorMessage = "Export failed: \(error.localizedDescription)"
                 showingErrorAlert = true
@@ -127,12 +138,16 @@ struct ContentView: View {
                 exportData = nil
             }
         }
-
-        // Present share sheet when activityURLs is set
-        .sheet(isPresented: Binding(get: { activityURLs != nil }, set: { if !$0 { activityURLs = nil } })) {
+        .sheet(
+            isPresented: Binding(
+                get: { activityURLs != nil },
+                set: {
+                    if !$0 { activityURLs = nil }
+                }
+            )
+        ) {
             if let urls = activityURLs {
                 ActivityView(urls: urls) {
-                    // cleanup temp files after sharing
                     for url in urls {
                         try? FileManager.default.removeItem(at: url)
                     }
@@ -145,25 +160,21 @@ struct ContentView: View {
     }
 
     private func loadPDF(from url: URL) {
-        if let doc = PDFDocument(url: url) {
-            DispatchQueue.main.async {
-                self.pdfDocument = doc
-                self.selectedPages = []
-                self.orderedSelectedPages = []
-                self.undoStack.removeAll()
-                self.redoStack.removeAll()
-            }
-        } else {
+        guard let doc = PDFDocument(url: url) else {
             importErrorMessage = "Failed to open PDF."
             showingErrorAlert = true
+            return
         }
-    }
 
-    // MARK: - Undo / Redo
+        pdfDocument = doc
+        selectedPages = []
+        orderedSelectedPages = []
+        undoStack.removeAll()
+        redoStack.removeAll()
+    }
 
     private func undo() {
         guard let previous = undoStack.popLast() else { return }
-        // push current state to redo (snapshot both)
         redoStack.append((selectedPages, orderedSelectedPages))
         selectedPages = previous.0
         orderedSelectedPages = previous.1
@@ -171,17 +182,14 @@ struct ContentView: View {
 
     private func redo() {
         guard let next = redoStack.popLast() else { return }
-        // push current state to undo (snapshot both)
         undoStack.append((selectedPages, orderedSelectedPages))
         selectedPages = next.0
         orderedSelectedPages = next.1
     }
 
-    // MARK: - Export
-
     private func exportCombined() {
         guard let doc = pdfDocument else { return }
-        // use explicit ordered list if available, otherwise default to sorted set
+
         let indexes = orderedSelectedPages.isEmpty ? selectedPages.sorted() : orderedSelectedPages
         guard !indexes.isEmpty else {
             importErrorMessage = "No pages selected to export."
@@ -190,8 +198,8 @@ struct ContentView: View {
         }
 
         let outDoc = PDFDocument()
+
         for idx in indexes {
-            // render page with annotations if present
             if let rendered = renderPageWithAnnotations(doc: doc, index: idx) {
                 outDoc.insert(rendered, at: outDoc.pageCount)
             } else if let page = doc.page(at: idx), let copy = page.copy() as? PDFPage {
@@ -199,18 +207,20 @@ struct ContentView: View {
             }
         }
 
-        if let data = outDoc.dataRepresentation() {
-            exportData = data
-            exportFileName = "combined.pdf"
-            showingExporter = true
-        } else {
+        guard let data = outDoc.dataRepresentation() else {
             importErrorMessage = "Failed to create combined PDF."
             showingErrorAlert = true
+            return
         }
+
+        exportData = data
+        exportFileName = "combined.pdf"
+        showingExporter = true
     }
 
     private func exportSeparate() {
         guard let doc = pdfDocument else { return }
+
         let indexes = orderedSelectedPages.isEmpty ? selectedPages.sorted() : orderedSelectedPages
         guard !indexes.isEmpty else {
             importErrorMessage = "No pages selected to export."
@@ -218,34 +228,27 @@ struct ContentView: View {
             return
         }
 
-        // Build PDF data per page and write to temp directory
         var urls: [URL] = []
         let fm = FileManager.default
         let tempBase = fm.temporaryDirectory.appendingPathComponent("simpLpdf_exports_\(UUID().uuidString)")
+
         do {
-            try fm.createDirectory(at: tempBase, withIntermediateDirectories: true, attributes: nil)
+            try fm.createDirectory(at: tempBase, withIntermediateDirectories: true)
+
             for idx in indexes {
-                // render annotated page if necessary
+                let single = PDFDocument()
+
                 if let rendered = renderPageWithAnnotations(doc: doc, index: idx) {
-                    let single = PDFDocument()
                     single.insert(rendered, at: 0)
-                    if let data = single.dataRepresentation() {
-                        let name = String(format: "page_%03d.pdf", idx + 1)
-                        let fileURL = tempBase.appendingPathComponent(name)
-                        try data.write(to: fileURL, options: .atomic)
-                        urls.append(fileURL)
-                    }
-                } else if let page = doc.page(at: idx) {
-                    let single = PDFDocument()
-                    if let copy = page.copy() as? PDFPage {
-                        single.insert(copy, at: 0)
-                    }
-                    if let data = single.dataRepresentation() {
-                        let name = String(format: "page_%03d.pdf", idx + 1)
-                        let fileURL = tempBase.appendingPathComponent(name)
-                        try data.write(to: fileURL, options: .atomic)
-                        urls.append(fileURL)
-                    }
+                } else if let page = doc.page(at: idx), let copy = page.copy() as? PDFPage {
+                    single.insert(copy, at: 0)
+                }
+
+                if let data = single.dataRepresentation() {
+                    let name = String(format: "page_%03d.pdf", idx + 1)
+                    let fileURL = tempBase.appendingPathComponent(name)
+                    try data.write(to: fileURL, options: .atomic)
+                    urls.append(fileURL)
                 }
             }
         } catch {
@@ -260,39 +263,33 @@ struct ContentView: View {
             return
         }
 
-        // Present a single share sheet with all file URLs
         activityURLs = urls
     }
 
-    // Render PDF page combined with PKDrawing (if present) into a new PDFPage
     private func renderPageWithAnnotations(doc: PDFDocument, index: Int) -> PDFPage? {
         guard let page = doc.page(at: index) else { return nil }
+
         let box = page.bounds(for: .mediaBox)
         let size = box.size
-        // renderer using device scale for sharper results
         let scale = UIScreen.main.scale
+
         let renderer = UIGraphicsImageRenderer(size: size)
         let img = renderer.image { ctx in
-            // draw PDF page
             page.draw(with: .mediaBox, to: ctx.cgContext)
 
-            // draw annotation if exists
             if let drawing = AnnotationStore.shared.drawing(for: index) {
                 let drawImg = drawing.image(from: CGRect(origin: .zero, size: size), scale: scale)
                 drawImg.draw(in: CGRect(origin: .zero, size: size))
             }
         }
 
-        if let newPage = PDFPage(image: img) {
-            return newPage
-        }
-        return nil
+        return PDFPage(image: img)
     }
 }
 
-// Simple FileDocument wrapper for exporting PDF data
 struct ExportPDFFile: FileDocument {
     static var readableContentTypes: [UTType] { [.pdf] }
+
     var data: Data
 
     init(data: Data) {
@@ -300,15 +297,10 @@ struct ExportPDFFile: FileDocument {
     }
 
     init(configuration: ReadConfiguration) throws {
-        if let fileData = configuration.file.regularFileContents {
-            data = fileData
-        } else {
-            data = Data()
-        }
+        data = configuration.file.regularFileContents ?? Data()
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        return FileWrapper(regularFileWithContents: data)
+        FileWrapper(regularFileWithContents: data)
     }
 }
- 
