@@ -70,6 +70,11 @@ struct ContentView: View {
 
                         Text("No PDF loaded")
                             .foregroundColor(.secondary)
+
+                        Button("Import PDF") {
+                            showingImporter = true
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
