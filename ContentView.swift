@@ -165,17 +165,31 @@ struct ContentView: View {
     }
 
     private func loadPDF(from url: URL) {
-        guard let doc = PDFDocument(url: url) else {
-            importErrorMessage = "Failed to open PDF."
-            showingErrorAlert = true
-            return
+        let didStartAccessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccessing {
+                url.stopAccessingSecurityScopedResource()
+            }
         }
 
-        pdfDocument = doc
-        selectedPages = []
-        orderedSelectedPages = []
-        undoStack.removeAll()
-        redoStack.removeAll()
+        do {
+            let data = try Data(contentsOf: url)
+
+            guard let doc = PDFDocument(data: data) else {
+                importErrorMessage = "Failed to read PDF data. The selected file may be damaged or unsupported."
+                showingErrorAlert = true
+                return
+            }
+
+            pdfDocument = doc
+            selectedPages = []
+            orderedSelectedPages = []
+            undoStack.removeAll()
+            redoStack.removeAll()
+        } catch {
+            importErrorMessage = "Failed to import PDF: \(error.localizedDescription)"
+            showingErrorAlert = true
+        }
     }
 
     private func undo() {
