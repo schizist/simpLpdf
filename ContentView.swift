@@ -101,6 +101,15 @@ struct ContentView: View {
                         clearSignal += 1
                     }
 
+                    Menu {
+                        Button("Import PDF") {
+                            showingImporter = true
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel("More")
+
                     Button(action: { showingImporter = true }) {
                         Image(systemName: "folder")
                     }

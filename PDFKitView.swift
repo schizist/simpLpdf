@@ -16,10 +16,10 @@ struct PDFKitView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> PDFView {
         let pdfView = PDFView()
+        pdfView.backgroundColor = .systemBackground
         pdfView.displayMode = .singlePageContinuous
         pdfView.displayDirection = .vertical
         pdfView.autoScales = true
-        pdfView.backgroundColor = .systemBackground
         pdfView.document = document
 
         // minimal PencilKit canvas overlay
@@ -64,20 +64,33 @@ struct PDFKitView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: PDFView, context: Context) {
+        uiView.backgroundColor = .systemBackground
+        uiView.displayMode = .singlePageContinuous
+        uiView.displayDirection = .vertical
+        uiView.autoScales = true
+
         if uiView.document != document {
             uiView.document = document
         }
+
         // update coordinator callbacks in case closures changed
         context.coordinator.onUndo = onUndo
         context.coordinator.onRedo = onRedo
         context.coordinator.pdfView = uiView
-        // ensure canvas is positioned for current page
-        context.coordinator.updateCanvasForCurrentPage()
+
         // enable/disable drawing interaction
         if let canvas = context.coordinator.canvas {
             canvas.isUserInteractionEnabled = isDrawingEnabled
             canvas.isHidden = !isDrawingEnabled
+            canvas.backgroundColor = .clear
+            canvas.isOpaque = false
         }
+
+        if isDrawingEnabled {
+            // ensure canvas is positioned for current page
+            context.coordinator.updateCanvasForCurrentPage()
+        }
+
         // handle clear signal
         if context.coordinator.lastClearSignal != clearSignal {
             context.coordinator.lastClearSignal = clearSignal
